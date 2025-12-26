@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
 const { requireAdmin } = require('../middleware/auth');
 
 // Models
@@ -13,19 +12,9 @@ const Checklist = require('../models/Checklist');
 const AccessLog = require('../models/AccessLog');
 const AccessCode = require('../models/AccessCode');
 
-// Configure multer for logo uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, path.join(__dirname, '../uploads'));
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    cb(null, uniqueSuffix + path.extname(file.originalname));
-  }
-});
-
+// Configure multer for logo uploads (memory storage for base64 conversion)
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 500 * 1024 }, // 500KB limit
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|svg|webp/;
@@ -37,6 +26,12 @@ const upload = multer({
     cb(new Error('Only image files are allowed'));
   }
 });
+
+// Helper function to convert file buffer to base64 data URL
+const fileToBase64 = (file) => {
+  const base64 = file.buffer.toString('base64');
+  return `data:${file.mimetype};base64,${base64}`;
+};
 
 // Admin authentication
 router.post('/auth', async (req, res) => {
@@ -155,7 +150,7 @@ router.post('/providers', requireAdmin, upload.single('logo'), async (req, res) 
     providerData.categories = categories; // Add parsed array
 
     if (req.file) {
-      providerData.logo = `/uploads/${req.file.filename}`;
+      providerData.logo = fileToBase64(req.file);
     }
     const provider = new ServiceProvider(providerData);
     await provider.save();
@@ -193,15 +188,7 @@ router.put('/providers/:id', requireAdmin, upload.single('logo'), async (req, re
     providerData.categories = categories; // Add parsed array
 
     if (req.file) {
-      providerData.logo = `/uploads/${req.file.filename}`;
-      // Delete old logo if exists
-      const oldProvider = await ServiceProvider.findById(req.params.id);
-      if (oldProvider && oldProvider.logo) {
-        const oldPath = path.join(__dirname, '..', oldProvider.logo);
-        if (fs.existsSync(oldPath)) {
-          fs.unlinkSync(oldPath);
-        }
-      }
+      providerData.logo = fileToBase64(req.file);
     }
     const provider = await ServiceProvider.findByIdAndUpdate(
       req.params.id,
@@ -223,13 +210,6 @@ router.delete('/providers/:id', requireAdmin, async (req, res) => {
     const provider = await ServiceProvider.findByIdAndDelete(req.params.id);
     if (!provider) {
       return res.status(404).json({ error: 'Provider not found' });
-    }
-    // Delete logo file if exists
-    if (provider.logo) {
-      const logoPath = path.join(__dirname, '..', provider.logo);
-      if (fs.existsSync(logoPath)) {
-        fs.unlinkSync(logoPath);
-      }
     }
     res.json({ success: true, message: 'Provider deleted' });
   } catch (error) {
