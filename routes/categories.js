@@ -3,8 +3,8 @@ const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const Category = require('../models/Category');
 
-// Get all categories
-router.get('/', requireAuth, async (req, res) => {
+// Get all categories (public)
+router.get('/', async (req, res) => {
   try {
     const categories = await Category.find().sort({ order: 1 });
     res.json(categories);

@@ -3,8 +3,8 @@ const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const ServiceProvider = require('../models/ServiceProvider');
 
-// Get all providers with optional filters
-router.get('/', requireAuth, async (req, res) => {
+// Get all providers with optional filters (public)
+router.get('/', async (req, res) => {
   try {
     const { search, category, priceRange } = req.query;
 
@@ -39,8 +39,8 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
-// Get single provider
-router.get('/:id', requireAuth, async (req, res) => {
+// Get single provider (public)
+router.get('/:id', async (req, res) => {
   try {
     const provider = await ServiceProvider.findById(req.params.id)
       .populate('category');
