@@ -44,7 +44,11 @@ app.use(express.urlencoded({ extended: true }));
 
 // CORS configuration
 const allowedOrigins = isProduction
-  ? [process.env.CLIENT_URL].filter(Boolean)
+  ? [
+      'https://kuwait-founder.com',
+      'https://www.kuwait-founder.com',
+      process.env.CLIENT_URL?.replace(/\/$/, '') // Remove trailing slash if present
+    ].filter(Boolean)
   : ['http://localhost:5173', 'http://localhost:3000'];
 
 app.use(cors({
@@ -52,7 +56,13 @@ app.use(cors({
     // Allow requests with no origin (mobile apps, curl, etc)
     if (!origin) return callback(null, true);
 
-    if (allowedOrigins.indexOf(origin) !== -1) {
+    // Normalize origin by removing trailing slash
+    const normalizedOrigin = origin.replace(/\/$/, '');
+    const isAllowed = allowedOrigins.some(allowed =>
+      allowed.replace(/\/$/, '') === normalizedOrigin
+    );
+
+    if (isAllowed) {
       callback(null, true);
     } else {
       console.log('Blocked by CORS:', origin);
