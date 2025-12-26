@@ -6,6 +6,15 @@ const MongoStore = require('connect-mongo');
 const cors = require('cors');
 const path = require('path');
 
+// Validate required environment variables
+const requiredEnvVars = ['MONGODB_URI', 'SESSION_SECRET', 'ADMIN_PASSWORD'];
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
+if (missingEnvVars.length > 0) {
+  console.error('ERROR: Missing required environment variables:', missingEnvVars.join(', '));
+  console.error('Please set these in your Render dashboard under Environment tab.');
+  process.exit(1);
+}
+
 // Import routes
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
