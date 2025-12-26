@@ -16,9 +16,12 @@ const serviceProviderSchema = new mongoose.Schema({
   },
   category: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'Category',
-    required: true
+    ref: 'Category'
   },
+  categories: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Category'
+  }],
   priceRange: {
     type: String,
     enum: ['budget', 'mid', 'premium'],

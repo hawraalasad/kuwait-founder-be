@@ -18,19 +18,42 @@ router.get('/', async (req, res) => {
       ];
     }
 
-    // Category filter
+    // Category filter - check both singular category and categories array
     if (category) {
-      query.category = category;
+      query.$or = query.$or || [];
+      query.$or.push(
+        { category: category },
+        { categories: category }
+      );
+      // If we already have search $or, we need to use $and
+      if (search) {
+        query = {
+          $and: [
+            { $or: [
+              { name: { $regex: search, $options: 'i' } },
+              { description: { $regex: search, $options: 'i' } }
+            ]},
+            { $or: [
+              { category: category },
+              { categories: category }
+            ]}
+          ]
+        };
+        if (priceRange) {
+          const ranges = priceRange.split(',');
+          query.$and.push({ priceRange: { $in: ranges } });
+        }
+      }
     }
 
     // Price range filter (can be comma-separated)
-    if (priceRange) {
+    if (priceRange && !search) {
       const ranges = priceRange.split(',');
       query.priceRange = { $in: ranges };
     }
 
     const providers = await ServiceProvider.find(query)
-      .populate('category')
+      .populate(['category', 'categories'])
       .sort({ featured: -1, createdAt: -1 });
 
     res.json(providers);
@@ -43,7 +66,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const provider = await ServiceProvider.findById(req.params.id)
-      .populate('category');
+      .populate(['category', 'categories']);
 
     if (!provider) {
       return res.status(404).json({ error: 'Provider not found' });

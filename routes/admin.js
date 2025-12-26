@@ -121,7 +121,7 @@ router.put('/sections/:id', requireAdmin, async (req, res) => {
 router.get('/providers', requireAdmin, async (req, res) => {
   try {
     const providers = await ServiceProvider.find()
-      .populate('category')
+      .populate(['category', 'categories'])
       .sort({ createdAt: -1 });
     res.json(providers);
   } catch (error) {
@@ -132,16 +132,34 @@ router.get('/providers', requireAdmin, async (req, res) => {
 // Create provider
 router.post('/providers', requireAdmin, upload.single('logo'), async (req, res) => {
   try {
+    // Parse categories from JSON string (sent via FormData)
+    let categories = [];
+    if (req.body.categories) {
+      try {
+        categories = JSON.parse(req.body.categories);
+      } catch (e) {
+        // If it's not JSON, treat as single category
+        categories = [req.body.categories];
+      }
+    } else if (req.body.category) {
+      categories = [req.body.category];
+    }
+
     const providerData = {
       ...req.body,
+      categories: categories,
+      category: categories[0] || null, // Keep backward compatibility
       bestFor: req.body.bestFor ? req.body.bestFor.split(',').map(s => s.trim()) : []
     };
+    delete providerData.categories; // Remove string version
+    providerData.categories = categories; // Add parsed array
+
     if (req.file) {
       providerData.logo = `/uploads/${req.file.filename}`;
     }
     const provider = new ServiceProvider(providerData);
     await provider.save();
-    const populated = await provider.populate('category');
+    const populated = await provider.populate(['category', 'categories']);
     res.status(201).json(populated);
   } catch (error) {
     console.error('Create provider error:', error);
@@ -152,10 +170,28 @@ router.post('/providers', requireAdmin, upload.single('logo'), async (req, res) 
 // Update provider
 router.put('/providers/:id', requireAdmin, upload.single('logo'), async (req, res) => {
   try {
+    // Parse categories from JSON string (sent via FormData)
+    let categories = [];
+    if (req.body.categories) {
+      try {
+        categories = JSON.parse(req.body.categories);
+      } catch (e) {
+        // If it's not JSON, treat as single category
+        categories = [req.body.categories];
+      }
+    } else if (req.body.category) {
+      categories = [req.body.category];
+    }
+
     const providerData = {
       ...req.body,
+      categories: categories,
+      category: categories[0] || null, // Keep backward compatibility
       bestFor: req.body.bestFor ? req.body.bestFor.split(',').map(s => s.trim()) : []
     };
+    delete providerData.categories; // Remove string version
+    providerData.categories = categories; // Add parsed array
+
     if (req.file) {
       providerData.logo = `/uploads/${req.file.filename}`;
       // Delete old logo if exists
@@ -171,7 +207,7 @@ router.put('/providers/:id', requireAdmin, upload.single('logo'), async (req, re
       req.params.id,
       providerData,
       { new: true }
-    ).populate('category');
+    ).populate(['category', 'categories']);
     if (!provider) {
       return res.status(404).json({ error: 'Provider not found' });
     }
