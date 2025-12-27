@@ -3,10 +3,22 @@ const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const ServiceProvider = require('../models/ServiceProvider');
 
+// Simple hash function for seeded randomization
+function seededRandom(seed, id) {
+  const str = seed + id.toString();
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash);
+}
+
 // Get all providers with optional filters and pagination (public)
 router.get('/', async (req, res) => {
   try {
-    const { search, category, priceRange, limit, skip } = req.query;
+    const { search, category, priceRange, limit, skip, seed } = req.query;
     const limitNum = parseInt(limit) || 0; // 0 means no limit
     const skipNum = parseInt(skip) || 0;
 
@@ -58,16 +70,37 @@ router.get('/', async (req, res) => {
       }
     }
 
-    // Run count and query in parallel for speed
-    const [total, providers] = await Promise.all([
-      ServiceProvider.countDocuments(queryFilter),
-      ServiceProvider.find(queryFilter)
+    // Get total count
+    const total = await ServiceProvider.countDocuments(queryFilter);
+
+    let providers;
+
+    if (seed) {
+      // Seeded random: fetch all, shuffle deterministically, then paginate
+      const allProviders = await ServiceProvider.find(queryFilter)
+        .populate(['category', 'categories'])
+        .lean();
+
+      // Sort by seeded random value (same seed = same order)
+      allProviders.sort((a, b) => {
+        // Featured items first
+        if (a.featured && !b.featured) return -1;
+        if (!a.featured && b.featured) return 1;
+        // Then by seeded random
+        return seededRandom(seed, a._id) - seededRandom(seed, b._id);
+      });
+
+      // Apply pagination
+      providers = allProviders.slice(skipNum, skipNum + (limitNum || 1000));
+    } else {
+      // No seed - regular sorted query (fast)
+      providers = await ServiceProvider.find(queryFilter)
         .populate(['category', 'categories'])
         .sort({ featured: -1, createdAt: -1 })
         .skip(skipNum)
         .limit(limitNum || 1000)
-        .lean() // Returns plain JS objects (faster)
-    ]);
+        .lean();
+    }
 
     // Return paginated response
     res.json({
