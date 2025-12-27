@@ -55,4 +55,11 @@ const serviceProviderSchema = new mongoose.Schema({
   timestamps: true
 });
 
+// Add indexes for faster queries
+serviceProviderSchema.index({ featured: -1, createdAt: -1 });
+serviceProviderSchema.index({ category: 1 });
+serviceProviderSchema.index({ categories: 1 });
+serviceProviderSchema.index({ priceRange: 1 });
+serviceProviderSchema.index({ name: 'text', description: 'text' });
+
 module.exports = mongoose.model('ServiceProvider', serviceProviderSchema);
