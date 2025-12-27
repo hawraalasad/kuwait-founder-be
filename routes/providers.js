@@ -6,7 +6,7 @@ const ServiceProvider = require('../models/ServiceProvider');
 // Get all providers with optional filters and pagination (public)
 router.get('/', async (req, res) => {
   try {
-    const { search, category, priceRange, limit, skip, seed } = req.query;
+    const { search, category, priceRange, limit, skip } = req.query;
     const limitNum = parseInt(limit) || 0; // 0 means no limit
     const skipNum = parseInt(skip) || 0;
 
@@ -61,19 +61,17 @@ router.get('/', async (req, res) => {
     // Get total count for pagination
     const total = await ServiceProvider.countDocuments(queryFilter);
 
-    // Build query with pagination
-    let dbQuery = ServiceProvider.find(queryFilter)
-      .populate(['category', 'categories'])
-      .sort({ featured: -1, createdAt: -1 });
+    // Use aggregation with $sample for random shuffling
+    const pipeline = [
+      { $match: queryFilter },
+      { $sample: { size: 1000 } }, // Shuffle all matching docs randomly
+      ...(skipNum > 0 ? [{ $skip: skipNum }] : []),
+      { $limit: limitNum || 1000 }
+    ];
 
-    if (skipNum > 0) {
-      dbQuery = dbQuery.skip(skipNum);
-    }
-    if (limitNum > 0) {
-      dbQuery = dbQuery.limit(limitNum);
-    }
-
-    const providers = await dbQuery;
+    const providers = await ServiceProvider.aggregate(pipeline);
+    // Populate categories after aggregation
+    await ServiceProvider.populate(providers, ['category', 'categories']);
 
     // Return paginated response
     res.json({
