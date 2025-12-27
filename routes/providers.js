@@ -3,24 +3,20 @@ const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const ServiceProvider = require('../models/ServiceProvider');
 
-// Simple hash function for seeded randomization
-function seededRandom(seed, id) {
-  const str = seed + id.toString();
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
+// Fisher-Yates shuffle
+function shuffleArray(array) {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
-  return Math.abs(hash);
+  return shuffled;
 }
 
 // Get all providers with optional filters and pagination (public)
 router.get('/', async (req, res) => {
   try {
-    const { search, category, priceRange, limit, skip, seed } = req.query;
-    const limitNum = parseInt(limit) || 0; // 0 means no limit
-    const skipNum = parseInt(skip) || 0;
+    const { search, category, priceRange } = req.query;
 
     let queryFilter = {};
 
@@ -70,43 +66,24 @@ router.get('/', async (req, res) => {
       }
     }
 
-    // Get total count
-    const total = await ServiceProvider.countDocuments(queryFilter);
+    // Fetch all matching providers
+    const allProviders = await ServiceProvider.find(queryFilter)
+      .populate(['category', 'categories'])
+      .lean();
 
-    let providers;
+    // Separate featured and non-featured
+    const featured = allProviders.filter(p => p.featured);
+    const nonFeatured = allProviders.filter(p => !p.featured);
 
-    if (seed) {
-      // Seeded random: fetch all, shuffle deterministically, then paginate
-      const allProviders = await ServiceProvider.find(queryFilter)
-        .populate(['category', 'categories'])
-        .lean();
+    // Shuffle non-featured randomly
+    const shuffledNonFeatured = shuffleArray(nonFeatured);
 
-      // Sort by seeded random value (same seed = same order)
-      allProviders.sort((a, b) => {
-        // Featured items first
-        if (a.featured && !b.featured) return -1;
-        if (!a.featured && b.featured) return 1;
-        // Then by seeded random
-        return seededRandom(seed, a._id) - seededRandom(seed, b._id);
-      });
+    // Featured first, then shuffled rest
+    const providers = [...featured, ...shuffledNonFeatured];
 
-      // Apply pagination
-      providers = allProviders.slice(skipNum, skipNum + (limitNum || 1000));
-    } else {
-      // No seed - regular sorted query (fast)
-      providers = await ServiceProvider.find(queryFilter)
-        .populate(['category', 'categories'])
-        .sort({ featured: -1, createdAt: -1 })
-        .skip(skipNum)
-        .limit(limitNum || 1000)
-        .lean();
-    }
-
-    // Return paginated response
     res.json({
       providers,
-      total,
-      hasMore: limitNum > 0 ? (skipNum + limitNum) < total : false
+      total: providers.length
     });
   } catch (error) {
     console.error('Fetch providers error:', error);
