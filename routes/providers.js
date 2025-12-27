@@ -3,16 +3,18 @@ const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const ServiceProvider = require('../models/ServiceProvider');
 
-// Get all providers with optional filters (public)
+// Get all providers with optional filters and pagination (public)
 router.get('/', async (req, res) => {
   try {
-    const { search, category, priceRange } = req.query;
+    const { search, category, priceRange, limit, skip, seed } = req.query;
+    const limitNum = parseInt(limit) || 0; // 0 means no limit
+    const skipNum = parseInt(skip) || 0;
 
-    let query = {};
+    let queryFilter = {};
 
     // Search filter
     if (search) {
-      query.$or = [
+      queryFilter.$or = [
         { name: { $regex: search, $options: 'i' } },
         { description: { $regex: search, $options: 'i' } }
       ];
@@ -20,44 +22,67 @@ router.get('/', async (req, res) => {
 
     // Category filter - check both singular category and categories array
     if (category) {
-      query.$or = query.$or || [];
-      query.$or.push(
-        { category: category },
-        { categories: category }
-      );
-      // If we already have search $or, we need to use $and
+      const categoryCondition = {
+        $or: [
+          { category: category },
+          { categories: category }
+        ]
+      };
+
       if (search) {
-        query = {
+        queryFilter = {
           $and: [
             { $or: [
               { name: { $regex: search, $options: 'i' } },
               { description: { $regex: search, $options: 'i' } }
             ]},
-            { $or: [
-              { category: category },
-              { categories: category }
-            ]}
+            categoryCondition
           ]
         };
-        if (priceRange) {
-          const ranges = priceRange.split(',');
-          query.$and.push({ priceRange: { $in: ranges } });
-        }
+      } else {
+        queryFilter = categoryCondition;
       }
     }
 
     // Price range filter (can be comma-separated)
-    if (priceRange && !search) {
+    if (priceRange) {
       const ranges = priceRange.split(',');
-      query.priceRange = { $in: ranges };
+      const priceCondition = { priceRange: { $in: ranges } };
+
+      if (queryFilter.$and) {
+        queryFilter.$and.push(priceCondition);
+      } else if (queryFilter.$or) {
+        queryFilter = { $and: [queryFilter, priceCondition] };
+      } else {
+        queryFilter.priceRange = { $in: ranges };
+      }
     }
 
-    const providers = await ServiceProvider.find(query)
+    // Get total count for pagination
+    const total = await ServiceProvider.countDocuments(queryFilter);
+
+    // Build query with pagination
+    let dbQuery = ServiceProvider.find(queryFilter)
       .populate(['category', 'categories'])
       .sort({ featured: -1, createdAt: -1 });
 
-    res.json(providers);
+    if (skipNum > 0) {
+      dbQuery = dbQuery.skip(skipNum);
+    }
+    if (limitNum > 0) {
+      dbQuery = dbQuery.limit(limitNum);
+    }
+
+    const providers = await dbQuery;
+
+    // Return paginated response
+    res.json({
+      providers,
+      total,
+      hasMore: limitNum > 0 ? (skipNum + limitNum) < total : false
+    });
   } catch (error) {
+    console.error('Fetch providers error:', error);
     res.status(500).json({ error: 'Failed to fetch providers' });
   }
 });
