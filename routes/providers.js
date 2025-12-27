@@ -1,19 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { requireAuth } = require('../middleware/auth');
 const ServiceProvider = require('../models/ServiceProvider');
 
-// Fisher-Yates shuffle
-function shuffleArray(array) {
-  const shuffled = [...array];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-  return shuffled;
-}
-
-// Get all providers with optional filters and pagination (public)
+// Get all providers with optional filters (public)
 router.get('/', async (req, res) => {
   try {
     const { search, category, priceRange } = req.query;
@@ -66,25 +55,13 @@ router.get('/', async (req, res) => {
       }
     }
 
-    // Fetch all matching providers
-    const allProviders = await ServiceProvider.find(queryFilter)
+    // Fast query - just fetch and return
+    const providers = await ServiceProvider.find(queryFilter)
       .populate(['category', 'categories'])
+      .sort({ featured: -1, createdAt: -1 })
       .lean();
 
-    // Separate featured and non-featured
-    const featured = allProviders.filter(p => p.featured);
-    const nonFeatured = allProviders.filter(p => !p.featured);
-
-    // Shuffle non-featured randomly
-    const shuffledNonFeatured = shuffleArray(nonFeatured);
-
-    // Featured first, then shuffled rest
-    const providers = [...featured, ...shuffledNonFeatured];
-
-    res.json({
-      providers,
-      total: providers.length
-    });
+    res.json(providers);
   } catch (error) {
     console.error('Fetch providers error:', error);
     res.status(500).json({ error: 'Failed to fetch providers' });
