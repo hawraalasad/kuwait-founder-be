@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const multer = require('multer');
 const path = require('path');
+const cloudinary = require('cloudinary').v2;
 const { requireAdmin } = require('../middleware/auth');
 
 // Models
@@ -12,10 +13,17 @@ const Checklist = require('../models/Checklist');
 const AccessLog = require('../models/AccessLog');
 const AccessCode = require('../models/AccessCode');
 
-// Configure multer for logo uploads (memory storage for base64 conversion)
+// Configure Cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET
+});
+
+// Configure multer for logo uploads (memory storage)
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 500 * 1024 }, // 500KB limit
+  limits: { fileSize: 2 * 1024 * 1024 }, // 2MB limit (Cloudinary handles optimization)
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|svg|webp/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -27,10 +35,25 @@ const upload = multer({
   }
 });
 
-// Helper function to convert file buffer to base64 data URL
-const fileToBase64 = (file) => {
-  const base64 = file.buffer.toString('base64');
-  return `data:${file.mimetype};base64,${base64}`;
+// Helper function to upload to Cloudinary
+const uploadToCloudinary = (file) => {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        folder: 'kuwait-founder/logos',
+        transformation: [
+          { width: 400, height: 400, crop: 'limit' }, // Resize to max 400x400
+          { quality: 'auto' }, // Auto optimize quality
+          { fetch_format: 'auto' } // Auto format (webp when supported)
+        ]
+      },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result.secure_url);
+      }
+    );
+    uploadStream.end(file.buffer);
+  });
 };
 
 // Admin authentication
@@ -150,7 +173,7 @@ router.post('/providers', requireAdmin, upload.single('logo'), async (req, res) 
     providerData.categories = categories; // Add parsed array
 
     if (req.file) {
-      providerData.logo = fileToBase64(req.file);
+      providerData.logo = await uploadToCloudinary(req.file);
     }
     const provider = new ServiceProvider(providerData);
     await provider.save();
@@ -188,7 +211,7 @@ router.put('/providers/:id', requireAdmin, upload.single('logo'), async (req, re
     providerData.categories = categories; // Add parsed array
 
     if (req.file) {
-      providerData.logo = fileToBase64(req.file);
+      providerData.logo = await uploadToCloudinary(req.file);
     }
     const provider = await ServiceProvider.findByIdAndUpdate(
       req.params.id,
