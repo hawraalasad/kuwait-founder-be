@@ -58,20 +58,16 @@ router.get('/', async (req, res) => {
       }
     }
 
-    // Get total count for pagination
-    const total = await ServiceProvider.countDocuments(queryFilter);
-
-    // Use aggregation with $sample for random shuffling
-    const pipeline = [
-      { $match: queryFilter },
-      { $sample: { size: 1000 } }, // Shuffle all matching docs randomly
-      ...(skipNum > 0 ? [{ $skip: skipNum }] : []),
-      { $limit: limitNum || 1000 }
-    ];
-
-    const providers = await ServiceProvider.aggregate(pipeline);
-    // Populate categories after aggregation
-    await ServiceProvider.populate(providers, ['category', 'categories']);
+    // Run count and query in parallel for speed
+    const [total, providers] = await Promise.all([
+      ServiceProvider.countDocuments(queryFilter),
+      ServiceProvider.find(queryFilter)
+        .populate(['category', 'categories'])
+        .sort({ featured: -1, createdAt: -1 })
+        .skip(skipNum)
+        .limit(limitNum || 1000)
+        .lean() // Returns plain JS objects (faster)
+    ]);
 
     // Return paginated response
     res.json({
