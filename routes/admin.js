@@ -546,4 +546,112 @@ router.get('/stats', requireAdmin, async (req, res) => {
   }
 });
 
+// ============ ANALYTICS ============
+
+router.get('/analytics', requireAdmin, async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 30;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+    startDate.setHours(0, 0, 0, 0);
+
+    // Get daily stats using aggregation
+    const dailyStats = await AccessLog.aggregate([
+      {
+        $match: {
+          timestamp: { $gte: startDate },
+          success: true
+        }
+      },
+      {
+        $group: {
+          _id: {
+            year: { $year: '$timestamp' },
+            month: { $month: '$timestamp' },
+            day: { $dayOfMonth: '$timestamp' }
+          },
+          totalVisits: { $sum: 1 },
+          uniqueUsers: { $addToSet: '$ipAddress' }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          date: {
+            $dateFromParts: {
+              year: '$_id.year',
+              month: '$_id.month',
+              day: '$_id.day'
+            }
+          },
+          totalVisits: 1,
+          uniqueUsers: { $size: '$uniqueUsers' }
+        }
+      },
+      { $sort: { date: -1 } }
+    ]);
+
+    // Get totals
+    const totals = await AccessLog.aggregate([
+      {
+        $match: {
+          timestamp: { $gte: startDate },
+          success: true
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalVisits: { $sum: 1 },
+          uniqueUsers: { $addToSet: '$ipAddress' }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          totalVisits: 1,
+          uniqueUsers: { $size: '$uniqueUsers' }
+        }
+      }
+    ]);
+
+    // Today's stats
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const todayStats = await AccessLog.aggregate([
+      {
+        $match: {
+          timestamp: { $gte: todayStart },
+          success: true
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalVisits: { $sum: 1 },
+          uniqueUsers: { $addToSet: '$ipAddress' }
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          totalVisits: 1,
+          uniqueUsers: { $size: '$uniqueUsers' }
+        }
+      }
+    ]);
+
+    res.json({
+      period: `Last ${days} days`,
+      today: todayStats[0] || { totalVisits: 0, uniqueUsers: 0 },
+      totals: totals[0] || { totalVisits: 0, uniqueUsers: 0 },
+      daily: dailyStats
+    });
+  } catch (error) {
+    console.error('Analytics error:', error);
+    res.status(500).json({ error: 'Failed to fetch analytics' });
+  }
+});
+
 module.exports = router;
