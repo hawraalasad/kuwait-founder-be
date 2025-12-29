@@ -642,6 +642,13 @@ router.get('/analytics', requireAdmin, async (req, res) => {
       }
     ]);
 
+    // Log for debugging
+    console.log('Analytics query results:', {
+      todayStats: todayStats,
+      totals: totals,
+      dailyCount: dailyStats.length
+    });
+
     res.json({
       period: `Last ${days} days`,
       today: todayStats[0] || { totalVisits: 0, uniqueUsers: 0 },
